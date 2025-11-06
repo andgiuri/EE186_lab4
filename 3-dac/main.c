@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
- ******************************************************************************
- * @file           : main.c
- * @brief          : Main program body
- ******************************************************************************
- * @attention
- *
- * Copyright (c) 2025 STMicroelectronics.
- * All rights reserved.
- *
- * This software is licensed under terms that can be found in the LICENSE file
- * in the root directory of this software component.
- * If no LICENSE file comes with this software, it is provided AS-IS.
- *
- ******************************************************************************
- */
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -104,49 +104,55 @@ static void MX_DAC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-float t = 0;              // variable we will use to read from the sine LUT
-float frequency = 262;    // frequency of the note we play in Hz
-uint32_t dac_setting = 0; // integer to output from the DAC
+float t = 0; 				// variable we will use to read from the sine LUT
+float frequency = 262;		// frequency of the note we play in Hz
+uint32_t dac_setting = 0;	// integer to output from the DAC
 float sin_table[LUT_SIZE];
+uint32_t lightness_max = 0;
+float curr_lightness = 0;
 
 int __io_putchar(int ch)
 {
-  HAL_UART_Transmit(&hlpuart1, (uint8_t *)&ch, 1, 10);
-  return ch;
+	  HAL_UART_Transmit(&hlpuart1, (uint8_t *)&ch, 1, 10);
+	  return ch;
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  if (htim->Instance == TIM4)
-  {
-    t = t + LUT_SIZE * frequency / 32000;
-    if (t > LUT_SIZE)
-    {
-      t = t - LUT_SIZE; // otherwise the float loses precision
-    }
-    dac_setting = sin_table[(int)t];
-    HAL_DAC_SetValue(&hdac1,
-                     DAC_CHANNEL_1,
-                     DAC_ALIGN_12B_R,
-                     dac_setting);
-  }
+
+/* TIM4 is set to fire an interrupt at 64KHz and every time the interrupt fires
+ * I sample a new value from sin_table. The frequency dependence is implemented
+ * by changing the "step size" of this sampling: the higher the frequency the more
+ * indices I skip at every sample, allowing me to play different notes.
+ * */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if (htim->Instance == TIM4){
+		t = t + LUT_SIZE * frequency / 64000;	//
+		if (t > LUT_SIZE){
+			t = t - LUT_SIZE;	// otherwise the float loses precision, which actually changes the note
+		}
+
+		dac_setting = sin_table[(int)t];
+		HAL_DAC_SetValue(&hdac1,
+			  			DAC_CHANNEL_1,
+			  			DAC_ALIGN_12B_R,
+			  			dac_setting);
+	}
+
 }
 
 /* USER CODE END 0 */
 
 /**
- * @brief  The application entry point.
- * @retval int
- */
+  * @brief  The application entry point.
+  * @retval int
+  */
 int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  // populating LUT for sine: 256 steps 0 to 2pi, centered at 2048 and amplitude 2047
-  for (int i = 0; i < LUT_SIZE; i++)
-  {
-    sin_table[i] = 2048 + 2040 * sin(i * 2 * M_PI / LUT_SIZE);
-  }
+	// populating LUT for sine: 256 steps 0 to 2pi, centered at 2048 and amplitude 2000
+	for (int i = 0; i < LUT_SIZE; i++){
+		sin_table[i] = 2048 + 2000 * sin(i * 2 * M_PI / LUT_SIZE); 	// not 2047 to avoid top clipping
+	}
 
   /* USER CODE END 1 */
 
@@ -191,8 +197,11 @@ int main(void)
   MX_USB_OTG_FS_USB_Init();
   MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
+  HAL_DAC_Start(&hdac1,DAC_CHANNEL_1);
   HAL_TIM_Base_Start_IT(&htim4);
+  HAL_ADC_Start(&hadc1);
+
+  lightness_max = HAL_ADC_GetValue(&hadc1);
 
   /* USER CODE END 2 */
 
@@ -200,6 +209,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  curr_lightness = ((float)HAL_ADC_GetValue(&hadc1) - lightness_max/3)/lightness_max;
+	  //frequency = 2000 * curr_lightness * curr_lightness;
+	  printf("\r\n curr = %f", curr_lightness);
 
     /* USER CODE END WHILE */
 
@@ -209,30 +221,30 @@ int main(void)
 }
 
 /**
- * @brief System Clock Configuration
- * @retval None
- */
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
-   */
+  */
   if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure LSE Drive Capability
-   */
+  */
   HAL_PWR_EnableBkUpAccess();
   __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
 
   /** Initializes the RCC Oscillators according to the specified parameters
-   * in the RCC_OscInitTypeDef structure.
-   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSE | RCC_OSCILLATORTYPE_MSI;
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSE|RCC_OSCILLATORTYPE_MSI;
   RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = 0;
@@ -250,8 +262,9 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
@@ -263,21 +276,22 @@ void SystemClock_Config(void)
   }
 
   /** Enable MSI Auto calibration
-   */
+  */
   HAL_RCCEx_EnableMSIPLLMode();
 }
 
 /**
- * @brief Peripherals Common Clock Configuration
- * @retval None
- */
+  * @brief Peripherals Common Clock Configuration
+  * @retval None
+  */
 void PeriphCommonClock_Config(void)
 {
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the peripherals clock
-   */
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_SAI1 | RCC_PERIPHCLK_SAI2 | RCC_PERIPHCLK_USB | RCC_PERIPHCLK_ADC;
+  */
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_SAI1|RCC_PERIPHCLK_SAI2
+                              |RCC_PERIPHCLK_USB|RCC_PERIPHCLK_ADC;
   PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
   PeriphClkInit.Sai2ClockSelection = RCC_SAI2CLKSOURCE_PLLSAI1;
   PeriphClkInit.AdcClockSelection = RCC_ADCCLKSOURCE_PLLSAI1;
@@ -288,7 +302,8 @@ void PeriphCommonClock_Config(void)
   PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV2;
   PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV2;
   PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
-  PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_SAI1CLK | RCC_PLLSAI1_48M2CLK | RCC_PLLSAI1_ADC1CLK;
+  PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_SAI1CLK|RCC_PLLSAI1_48M2CLK
+                              |RCC_PLLSAI1_ADC1CLK;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -296,10 +311,10 @@ void PeriphCommonClock_Config(void)
 }
 
 /**
- * @brief ADC1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_ADC1_Init(void)
 {
 
@@ -314,7 +329,7 @@ static void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 1 */
 
   /** Common config
-   */
+  */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
@@ -336,7 +351,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-   */
+  */
   sConfig.Channel = ADC_CHANNEL_8;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
@@ -350,13 +365,14 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
- * @brief CAN1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief CAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_CAN1_Init(void)
 {
 
@@ -386,13 +402,14 @@ static void MX_CAN1_Init(void)
   /* USER CODE BEGIN CAN1_Init 2 */
 
   /* USER CODE END CAN1_Init 2 */
+
 }
 
 /**
- * @brief COMP1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief COMP1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_COMP1_Init(void)
 {
 
@@ -419,13 +436,14 @@ static void MX_COMP1_Init(void)
   /* USER CODE BEGIN COMP1_Init 2 */
 
   /* USER CODE END COMP1_Init 2 */
+
 }
 
 /**
- * @brief COMP2 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief COMP2 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_COMP2_Init(void)
 {
 
@@ -452,13 +470,14 @@ static void MX_COMP2_Init(void)
   /* USER CODE BEGIN COMP2_Init 2 */
 
   /* USER CODE END COMP2_Init 2 */
+
 }
 
 /**
- * @brief DAC1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief DAC1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_DAC1_Init(void)
 {
 
@@ -473,7 +492,7 @@ static void MX_DAC1_Init(void)
   /* USER CODE END DAC1_Init 1 */
 
   /** DAC Initialization
-   */
+  */
   hdac1.Instance = DAC1;
   if (HAL_DAC_Init(&hdac1) != HAL_OK)
   {
@@ -481,7 +500,7 @@ static void MX_DAC1_Init(void)
   }
 
   /** DAC channel OUT1 config
-   */
+  */
   sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
   sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
   sConfig.DAC_HighFrequency = DAC_HIGH_FREQUENCY_INTERFACE_MODE_DISABLE;
@@ -495,13 +514,14 @@ static void MX_DAC1_Init(void)
   /* USER CODE BEGIN DAC1_Init 2 */
 
   /* USER CODE END DAC1_Init 2 */
+
 }
 
 /**
- * @brief I2C1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_I2C1_Init(void)
 {
 
@@ -527,14 +547,14 @@ static void MX_I2C1_Init(void)
   }
 
   /** Configure Analogue filter
-   */
+  */
   if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure Digital filter
-   */
+  */
   if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
   {
     Error_Handler();
@@ -542,13 +562,14 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
- * @brief I2C2 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_I2C2_SMBUS_Init(void)
 {
 
@@ -578,7 +599,7 @@ static void MX_I2C2_SMBUS_Init(void)
   }
 
   /** configuration Alert Mode
-   */
+  */
   if (HAL_SMBUS_EnableAlert_IT(&hsmbus2) != HAL_OK)
   {
     Error_Handler();
@@ -586,13 +607,14 @@ static void MX_I2C2_SMBUS_Init(void)
   /* USER CODE BEGIN I2C2_Init 2 */
 
   /* USER CODE END I2C2_Init 2 */
+
 }
 
 /**
- * @brief LPUART1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief LPUART1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_LPUART1_UART_Init(void)
 {
 
@@ -633,13 +655,14 @@ static void MX_LPUART1_UART_Init(void)
   /* USER CODE BEGIN LPUART1_Init 2 */
 
   /* USER CODE END LPUART1_Init 2 */
+
 }
 
 /**
- * @brief USART2 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_USART2_UART_Init(void)
 {
 
@@ -680,13 +703,14 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
 }
 
 /**
- * @brief USART3 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_USART3_UART_Init(void)
 {
 
@@ -727,13 +751,14 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
+
 }
 
 /**
- * @brief SAI1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief SAI1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_SAI1_Init(void)
 {
 
@@ -794,13 +819,14 @@ static void MX_SAI1_Init(void)
   /* USER CODE BEGIN SAI1_Init 2 */
 
   /* USER CODE END SAI1_Init 2 */
+
 }
 
 /**
- * @brief SAI2 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief SAI2 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_SAI2_Init(void)
 {
 
@@ -846,13 +872,14 @@ static void MX_SAI2_Init(void)
   /* USER CODE BEGIN SAI2_Init 2 */
 
   /* USER CODE END SAI2_Init 2 */
+
 }
 
 /**
- * @brief SPI3 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief SPI3 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_SPI3_Init(void)
 {
 
@@ -885,13 +912,14 @@ static void MX_SPI3_Init(void)
   /* USER CODE BEGIN SPI3_Init 2 */
 
   /* USER CODE END SPI3_Init 2 */
+
 }
 
 /**
- * @brief TIM1 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_TIM1_Init(void)
 {
 
@@ -974,13 +1002,14 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 2 */
   HAL_TIM_MspPostInit(&htim1);
+
 }
 
 /**
- * @brief TIM2 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_TIM2_Init(void)
 {
 
@@ -1026,13 +1055,14 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
+
 }
 
 /**
- * @brief TIM3 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_TIM3_Init(void)
 {
 
@@ -1078,13 +1108,14 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
+
 }
 
 /**
- * @brief TIM4 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_TIM4_Init(void)
 {
 
@@ -1102,7 +1133,7 @@ static void MX_TIM4_Init(void)
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = 0;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 999;
+  htim4.Init.Period = 499;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -1140,13 +1171,14 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 2 */
   HAL_TIM_MspPostInit(&htim4);
+
 }
 
 /**
- * @brief TIM15 Initialization Function
- * @param None
- * @retval None
- */
+  * @brief TIM15 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_TIM15_Init(void)
 {
 
@@ -1204,13 +1236,14 @@ static void MX_TIM15_Init(void)
 
   /* USER CODE END TIM15_Init 2 */
   HAL_TIM_MspPostInit(&htim15);
+
 }
 
 /**
- * @brief USB_OTG_FS Initialization Function
- * @param None
- * @retval None
- */
+  * @brief USB_OTG_FS Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_USB_OTG_FS_USB_Init(void)
 {
 
@@ -1224,13 +1257,14 @@ static void MX_USB_OTG_FS_USB_Init(void)
   /* USER CODE BEGIN USB_OTG_FS_Init 2 */
 
   /* USER CODE END USB_OTG_FS_Init 2 */
+
 }
 
 /**
- * @brief GPIO Initialization Function
- * @param None
- * @retval None
- */
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -1250,7 +1284,7 @@ static void MX_GPIO_Init(void)
   HAL_PWREx_EnableVddIO2();
 
   /*Configure GPIO pins : PA5 PA6 PA7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -1259,7 +1293,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : PC8 PC9 PC10 PC11
                            PC12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12;
+  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11
+                          |GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -1267,7 +1302,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA8 PA10 PA11 PA12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12;
+  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
@@ -1298,9 +1333,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE END 4 */
 
 /**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -1313,12 +1348,12 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
